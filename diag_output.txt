@@ -1,0 +1,85 @@
+LHM DLL exists: True
+
+=== Hardware enumeration ===
+computer.Hardware type: <class 'System.Collections.Generic.IList[IHardware]'>
+list() worked: 3 items
+
+--- Intel Core i5-14450HX (Type: Cpu) ---
+  Sensor count: 51
+    Load: CPU Core #1 Thread #1 = 0.0
+    Load: CPU Core #1 Thread #2 = 0.0
+    Load: CPU Core #2 Thread #1 = 0.0
+    Load: CPU Core #2 Thread #2 = 0.0
+    Load: CPU Core #3 Thread #1 = 0.0
+    Load: CPU Core #3 Thread #2 = 0.0
+    Load: CPU Core #4 Thread #1 = 0.0
+    Load: CPU Core #4 Thread #2 = 0.0
+    Load: CPU Core #5 Thread #1 = 0.0
+    Load: CPU Core #5 Thread #2 = 0.0
+    Load: CPU Core #6 Thread #1 = 0.0
+    Load: CPU Core #6 Thread #2 = 0.0
+    Load: CPU Core #7 = 0.0
+    Load: CPU Core #8 = 0.0
+    Load: CPU Core #9 = 0.0
+    Load: CPU Core #10 = 0.0
+    Load: CPU Total = 0.0
+    Load: CPU Core Max = 0.0
+
+--- NVIDIA GeForce RTX 5050 Laptop GPU (Type: GpuNvidia) ---
+  Sensor count: 31
+    Temperature: GPU Core = 47.0
+    Clock: GPU Core = 2197.0
+    Clock: GPU Memory = 12001.0
+    Load: GPU Core = 0.0
+    Load: GPU Memory Controller = 0.0
+    Load: GPU Video Engine = 0.0
+    Load: GPU Bus = 5.0
+    SmallData: D3D Dedicated Memory Used = 494.94140625
+    SmallData: D3D Shared Memory Used = 34.40234375
+    Load: D3D 3D = 0.23633532226085663
+    Load: D3D Video Decode = 0.0
+    Load: D3D Copy = 0.0
+    Load: D3D Copy = 0.035735420882701874
+    Load: D3D Security = 0.0
+    Load: D3D Video Encode = 0.0
+    Load: D3D OFA_0 = 0.0
+    Load: D3D JPEG_Decode_0 = 0.0
+    Load: D3D VR = 0.0
+    Load: D3D Copy = 0.0
+    Load: D3D Copy = 0.0
+    Load: D3D Copy = 0.0
+    Load: D3D Copy = 0.0
+    Temperature: GPU Hot Spot = 47.125
+    Temperature: GPU Memory Junction = 255.0
+    SmallData: GPU Memory Total = 8151.0
+    SmallData: GPU Memory Free = 7425.0
+    SmallData: GPU Memory Used = 725.0
+    Load: GPU Memory = 8.897201538085938
+    Power: GPU Package = 12.73799991607666
+    Throughput: GPU PCIe Rx = 19744768.0
+    Throughput: GPU PCIe Tx = 1979392.0
+
+--- Intel(R) UHD Graphics (Type: GpuIntel) ---
+  Sensor count: 15
+    SmallData: D3D Shared Memory Total = 8042.552734375
+    SmallData: D3D Shared Memory Used = 0.46875
+    Load: D3D 3D = 0.0
+    Load: D3D Video Decode = 0.0
+    Load: D3D Copy = 0.0
+    Load: D3D Video Processing = 0.0
+    Load: D3D Other = 0.0
+    Load: D3D Other = 0.0
+    Load: D3D Other = 0.0
+    Load: D3D Other = 0.0
+    Load: D3D Other = 0.0
+    Load: D3D Overlay = 0.0
+    Load: D3D Other = 0.0
+    Load: D3D Other = 0.0
+
+=== Second iteration test ===
+Second list() worked: 3 items
+  Intel Core i5-14450HX: 51 sensors on 2nd pass
+  NVIDIA GeForce RTX 5050 Laptop GPU: 31 sensors on 2nd pass
+  Intel(R) UHD Graphics: 15 sensors on 2nd pass
+
+Done.

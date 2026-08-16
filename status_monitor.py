@@ -103,6 +103,7 @@ try:
     import platform, threading, datetime, tkinter as tk
     import customtkinter as ctk
     import psutil
+    import win32gui, win32con, win32api
 except ImportError as _err:
     import tkinter as _tk
     from tkinter import messagebox as _mb
@@ -604,8 +605,8 @@ def _make_tray_img(cpu_val, gpu_val):
 
 def _tray_tooltip(cpu_val, gpu_val, cpu_pct):
     parts = ["System Monitor"]
-    if cpu_val  is not None: parts.append(f"CPU Temp: {cpu_val:.0f}Â°C")
-    if gpu_val  is not None: parts.append(f"GPU Temp: {gpu_val:.0f}Â°C")
+    if cpu_val  is not None: parts.append(f"CPU Temp: {cpu_val:.0f}°C")
+    if gpu_val  is not None: parts.append(f"GPU Temp: {gpu_val:.0f}°C")
     if cpu_pct  is not None: parts.append(f"CPU Load: {cpu_pct:.0f}%")
     return "  |  ".join(parts)
 
@@ -648,109 +649,318 @@ def update_tray(cpu_val, gpu_val, cpu_pct):
     except Exception:
         pass
 
-# â”€â”€â”€ Floating Overlay Bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ─── Floating Overlay Bar ──────────────────────────────────────────────────────────
 class OverlayBar:
-    """Compact draggable always-on-top stats bar (like HWiNFO taskbar widget)."""
-
-    _BG     = "#0d0f14"
-    _BORDER = "#1e2130"
+    """Compact draggable always-on-top stats overlay, supporting HUD and Widget styles."""
 
     def __init__(self, root, on_show_main, on_quit):
         self._on_show = on_show_main
         self._on_quit = on_quit
+        self.root = root
+        
         self.win = tk.Toplevel(root)
         self.win.overrideredirect(True)          # no title bar
         self.win.wm_attributes("-topmost", True)
-        self.win.wm_attributes("-alpha",   0.93)
-        self.win.configure(bg=self._BG)
-
-        # Rounded-look border frame
-        border = tk.Frame(self.win, bg=self._BORDER, padx=1, pady=1)
-        border.pack(fill="both", expand=True)
-        inner = tk.Frame(border, bg=self._BG, padx=12, pady=6)
-        inner.pack(fill="both", expand=True)
-
+        
+        # Default settings (can be modified by status monitor UI)
+        self.style_mode = "MSI Afterburner (HUD)"
+        self.bg_mode = "Translucent Dark"
+        self.opacity = 0.93
+        self.font_size_name = "Medium"
+        self.locked = False
+        
+        # Border and inner frame
+        self.border = tk.Frame(self.win, bg="#1e2130", padx=1, pady=1)
+        self.border.pack(fill="both", expand=True)
+        self.inner = tk.Frame(self.border, bg="#0d0f14")
+        self.inner.pack(fill="both", expand=True)
+        
         self.lbl = {}
-        self._all_widgets = [self.win, border, inner]
+        self._all_widgets = []
+        
+        # Initial build
+        self.rebuild_layout(self.style_mode, self.bg_mode, self.opacity, self.font_size_name)
+        
+        # Context menu
+        self._build_menu(root)
+        
+        # Register default geometry
+        self.win.update_idletasks()
+        self.reset_position()
 
+    def rebuild_layout(self, style_mode, bg_mode, opacity, font_size_name):
+        self.style_mode = style_mode
+        self.bg_mode = bg_mode
+        self.opacity = opacity
+        self.font_size_name = font_size_name
+        
+        # Clear existing widgets in the inner frame
+        for widget in self.inner.winfo_children():
+            widget.destroy()
+            
+        self.lbl = {}
+        self._all_widgets = [self.win, self.border, self.inner]
+        
+        # Define background colors
+        if bg_mode == "Fully Transparent":
+            bg_color = "#010101" # transparent color key
+            self.win.wm_attributes("-transparentcolor", "#010101")
+            self.win.configure(bg=bg_color)
+            self.border.configure(bg=bg_color, padx=0, pady=0)
+            self.inner.configure(bg=bg_color, padx=5, pady=5)
+        else: # Translucent Dark
+            bg_color = "#090a12"
+            self.win.wm_attributes("-transparentcolor", "") # clear transparent color key
+            self.win.configure(bg=bg_color)
+            self.border.configure(bg="#1d2545", padx=1, pady=1)
+            self.inner.configure(bg=bg_color, padx=12, pady=6)
+            
+        self.win.wm_attributes("-alpha", opacity)
+        
+        # Determine sizes
+        sizes = {
+            "Small": (8, 9),
+            "Medium": (10, 11),
+            "Large": (12, 13),
+            "Extra Large": (14, 16)
+        }
+        lbl_sz, val_sz = sizes.get(font_size_name, (10, 11))
+        
+        font_lbl = ("Segoe UI", lbl_sz, "bold")
+        font_val = ("Segoe UI", val_sz, "bold")
+        font_mono_val = ("Consolas", val_sz, "bold")
+        
         def row(parent):
-            f = tk.Frame(parent, bg=self._BG)
+            f = tk.Frame(parent, bg=bg_color)
             f.pack(fill="x")
             self._all_widgets.append(f)
             return f
+            
+        if style_mode == "MSI Afterburner (HUD)":
+            # 1. CPU line
+            r_cpu = row(self.inner)
+            lbl_cpu = tk.Label(r_cpu, text="CPU  ", bg=bg_color, fg=C_CYAN, font=font_lbl)
+            lbl_cpu.pack(side="left")
+            self._all_widgets.append(lbl_cpu)
+            
+            self.lbl["cpu_t"] = tk.Label(r_cpu, text="--°C", bg=bg_color, fg=ACCENT_YELLOW, font=font_mono_val)
+            self.lbl["cpu_t"].pack(side="left")
+            self._all_widgets.append(self.lbl["cpu_t"])
+            
+            d1 = tk.Label(r_cpu, text=" | ", bg=bg_color, fg="#374151", font=font_lbl)
+            d1.pack(side="left")
+            self._all_widgets.append(d1)
+            
+            self.lbl["cpu_p"] = tk.Label(r_cpu, text="--%", bg=bg_color, fg=C_EMERALD, font=font_mono_val)
+            self.lbl["cpu_p"].pack(side="left")
+            self._all_widgets.append(self.lbl["cpu_p"])
+            
+            d2 = tk.Label(r_cpu, text=" | ", bg=bg_color, fg="#374151", font=font_lbl)
+            d2.pack(side="left")
+            self._all_widgets.append(d2)
+            
+            self.lbl["cpu_w"] = tk.Label(r_cpu, text="--W", bg=bg_color, fg=C_AMBER, font=font_mono_val)
+            self.lbl["cpu_w"].pack(side="left")
+            self._all_widgets.append(self.lbl["cpu_w"])
+            
+            d3 = tk.Label(r_cpu, text=" | ", bg=bg_color, fg="#374151", font=font_lbl)
+            d3.pack(side="left")
+            self._all_widgets.append(d3)
+            
+            self.lbl["freq"] = tk.Label(r_cpu, text="--GHz", bg=bg_color, fg=T_MID, font=font_mono_val)
+            self.lbl["freq"].pack(side="left")
+            self._all_widgets.append(self.lbl["freq"])
+            
+            # 2. GPU line
+            r_gpu = row(self.inner)
+            lbl_gpu = tk.Label(r_gpu, text="GPU  ", bg=bg_color, fg=C_PINK, font=font_lbl)
+            lbl_gpu.pack(side="left")
+            self._all_widgets.append(lbl_gpu)
+            
+            self.lbl["gpu_t"] = tk.Label(r_gpu, text="--°C", bg=bg_color, fg=ACCENT_BLUE, font=font_mono_val)
+            self.lbl["gpu_t"].pack(side="left")
+            self._all_widgets.append(self.lbl["gpu_t"])
+            
+            d4 = tk.Label(r_gpu, text=" | ", bg=bg_color, fg="#374151", font=font_lbl)
+            d4.pack(side="left")
+            self._all_widgets.append(d4)
+            
+            self.lbl["gpu_p"] = tk.Label(r_gpu, text="--%", bg=bg_color, fg=C_EMERALD, font=font_mono_val)
+            self.lbl["gpu_p"].pack(side="left")
+            self._all_widgets.append(self.lbl["gpu_p"])
+            
+            d5 = tk.Label(r_gpu, text=" | ", bg=bg_color, fg="#374151", font=font_lbl)
+            d5.pack(side="left")
+            self._all_widgets.append(d5)
+            
+            self.lbl["gpu_w"] = tk.Label(r_gpu, text="--W", bg=bg_color, fg="#7baef7", font=font_mono_val)
+            self.lbl["gpu_w"].pack(side="left")
+            self._all_widgets.append(self.lbl["gpu_w"])
+            
+            d6 = tk.Label(r_gpu, text=" | ", bg=bg_color, fg="#374151", font=font_lbl)
+            d6.pack(side="left")
+            self._all_widgets.append(d6)
+            
+            self.lbl["gpu_c"] = tk.Label(r_gpu, text="--MHz", bg=bg_color, fg=C_PURPLE, font=font_mono_val)
+            self.lbl["gpu_c"].pack(side="left")
+            self._all_widgets.append(self.lbl["gpu_c"])
+            
+            # 3. RAM line
+            r_ram = row(self.inner)
+            lbl_ram = tk.Label(r_ram, text="MEM  ", bg=bg_color, fg=C_PURPLE, font=font_lbl)
+            lbl_ram.pack(side="left")
+            self._all_widgets.append(lbl_ram)
+            
+            self.lbl["ram"] = tk.Label(r_ram, text="--GB / --GB", bg=bg_color, fg=C_PURPLE, font=font_mono_val)
+            self.lbl["ram"].pack(side="left")
+            self._all_widgets.append(self.lbl["ram"])
+            
+            # 4. Battery line
+            r_bat = row(self.inner)
+            lbl_bat = tk.Label(r_bat, text="BAT  ", bg=bg_color, fg=C_EMERALD, font=font_lbl)
+            lbl_bat.pack(side="left")
+            self._all_widgets.append(lbl_bat)
+            
+            self.lbl["bat"] = tk.Label(r_bat, text="--%", bg=bg_color, fg=C_EMERALD, font=font_mono_val)
+            self.lbl["bat"].pack(side="left")
+            self._all_widgets.append(self.lbl["bat"])
+            
+        else: # Compact Widget Bar
+            def metric(parent, key, abbr, val_color, unit=""):
+                a = tk.Label(parent, text=abbr, bg=bg_color, fg="#5c6a85", font=font_lbl)
+                a.pack(side="left")
+                v = tk.Label(parent, text="--"+unit, bg=bg_color, fg=val_color, font=font_mono_val)
+                v.pack(side="left", padx=(2, 10))
+                self.lbl[key] = (v, unit)
+                self._all_widgets += [a, v]
+                
+            r1 = row(self.inner)
+            metric(r1, "cpu_t", "CPU",  ACCENT_YELLOW, "°")
+            metric(r1, "cpu_w", "W",    "#e2a84b",     "W")
+            metric(r1, "gpu_t", "GPU",  ACCENT_BLUE,   "°")
+            metric(r1, "gpu_w", "W",    "#7baef7",     "W")
+            metric(r1, "cpu_p", "LOAD", ACCENT_GREEN,  "%")
+            
+            sep = tk.Frame(self.inner, bg="#1c2545" if bg_mode != "Fully Transparent" else bg_color, height=1)
+            sep.pack(fill="x", pady=2)
+            self._all_widgets.append(sep)
+            
+            r2 = row(self.inner)
+            metric(r2, "ram",  "RAM",  ACCENT_PURPLE, "G")
+            metric(r2, "bat",  "BAT",  ACCENT_GREEN,  "%")
+            metric(r2, "freq", "GHz",  T_MID,         "")
 
-        def metric(parent, key, abbr, val_color, unit=""):
-            """Abbr label + value label side by side."""
-            a = tk.Label(parent, text=abbr, bg=self._BG, fg="#4b5563",
-                         font=("Segoe UI", 8, "bold"))
-            a.pack(side="left")
-            v = tk.Label(parent, text="--"+unit, bg=self._BG, fg=val_color,
-                         font=("Segoe UI", 9, "bold"))
-            v.pack(side="left", padx=(2, 10))
-            self.lbl[key] = (v, unit)
-            self._all_widgets += [a, v]
-
-        r1 = row(inner)
-        metric(r1, "cpu_t", "CPU",  ACCENT_YELLOW, "\u00b0")
-        metric(r1, "cpu_w", "W",    "#e2a84b",     "W")
-        metric(r1, "gpu_t", "GPU",  ACCENT_BLUE,   "\u00b0")
-        metric(r1, "gpu_w", "W",    "#7baef7",     "W")
-        metric(r1, "cpu_p", "LOAD", ACCENT_GREEN,  "%")
-
-        sep = tk.Frame(inner, bg=self._BORDER, height=1)
-        sep.pack(fill="x", pady=2)
-        self._all_widgets.append(sep)
-
-        r2 = row(inner)
-        metric(r2, "ram",  "RAM",  ACCENT_PURPLE, "G")
-        metric(r2, "bat",  "BAT",  ACCENT_GREEN,  "%")
-        metric(r2, "freq", "GHz",  TEXT_MUTED,    "")
-
-        # Position: bottom-right, just above taskbar
-        self.win.update_idletasks()
-        sw = self.win.winfo_screenwidth()
-        sh = self.win.winfo_screenheight()
-        w  = self.win.winfo_reqwidth()  or 270
-        h  = self.win.winfo_reqheight() or 62
-        self.win.geometry(f"+{sw - w - 14}+{sh - h - 52}")
-
+        # Re-apply window bindings and locks
         self._bind_drag()
-        self._build_menu(root)
+        self.set_lock(self.locked)
 
     def _set(self, key, value, color=None):
-        lbl, unit = self.lbl[key]
-        lbl.config(text=f"{value}{unit}")
-        if color:
-            lbl.config(fg=color)
+        if self.style_mode == "Compact Widget Bar":
+            lbl, unit = self.lbl[key]
+            lbl.config(text=f"{value}{unit}")
+            if color:
+                lbl.config(fg=color)
+        else:
+            lbl = self.lbl.get(key)
+            if lbl:
+                lbl.config(text=str(value))
+                if color:
+                    lbl.config(fg=color)
 
     def _tc(self, v):
-        if v is None: return TEXT_MUTED
-        if v < 60:    return ACCENT_GREEN
-        if v < 85:    return ACCENT_YELLOW
-        return ACCENT_RED
+        if v is None: return T_MID
+        if v < 60:    return C_EMERALD
+        if v < 85:    return C_AMBER
+        return "#ef4444"
 
     def update(self, cpu_t, gpu_t, cpu_p, ram_gb, bat_pct, freq_ghz,
-               cpu_w=None, gpu_w=None):
-        if cpu_t  is not None: self._set("cpu_t", f"{cpu_t:.0f}",  self._tc(cpu_t))
-        else:                   self._set("cpu_t", "--",           TEXT_MUTED)
-        if cpu_w  is not None: self._set("cpu_w", f"{cpu_w:.0f}",  "#e2a84b")
-        else:                   self._set("cpu_w", "--",           TEXT_MUTED)
-        if gpu_t  is not None: self._set("gpu_t", f"{gpu_t:.0f}",  self._tc(gpu_t))
-        else:                   self._set("gpu_t", "--",           TEXT_MUTED)
-        if gpu_w  is not None: self._set("gpu_w", f"{gpu_w:.0f}",  "#7baef7")
-        else:                   self._set("gpu_w", "--",           TEXT_MUTED)
-        if cpu_p  is not None: self._set("cpu_p", f"{cpu_p:.0f}",  self._tc(cpu_p))
-        else:                   self._set("cpu_p", "--",           TEXT_MUTED)
-        if ram_gb is not None: self._set("ram",   f"{ram_gb:.1f}", ACCENT_PURPLE)
-        else:                   self._set("ram",   "--",           TEXT_MUTED)
-        if bat_pct is not None:
-            bc = ACCENT_GREEN if bat_pct > 20 else ACCENT_RED
-            self._set("bat", f"{bat_pct:.0f}", bc)
-        else:
-            self._set("bat", "--", TEXT_MUTED)
-        if freq_ghz is not None: self._set("freq", f"{freq_ghz:.2f}", TEXT_MUTED)
-        else:                     self._set("freq", "--",              TEXT_MUTED)
-
+               cpu_w=None, gpu_w=None, gpu_load=None, gpu_clock=None):
+        
+        if self.style_mode == "MSI Afterburner (HUD)":
+            # CPU Temp
+            if cpu_t is not None:
+                self.lbl["cpu_t"].config(text=f"{cpu_t:.0f}°C", fg=self._tc(cpu_t))
+            else:
+                self.lbl["cpu_t"].config(text="--°C", fg=T_MID)
+                
+            # CPU Load
+            if cpu_p is not None:
+                self.lbl["cpu_p"].config(text=f"{cpu_p:.0f}%", fg=self._tc(cpu_p))
+            else:
+                self.lbl["cpu_p"].config(text="--%", fg=T_MID)
+                
+            # CPU Power
+            if cpu_w is not None:
+                self.lbl["cpu_w"].config(text=f"{cpu_w:.0f}W", fg=C_AMBER)
+            else:
+                self.lbl["cpu_w"].config(text="--W", fg=T_MID)
+                
+            # CPU Clock
+            if freq_ghz is not None:
+                self.lbl["freq"].config(text=f"{freq_ghz:.2f}GHz", fg=T_MID)
+            else:
+                self.lbl["freq"].config(text="--GHz", fg=T_MID)
+                
+            # GPU Temp
+            if gpu_t is not None:
+                self.lbl["gpu_t"].config(text=f"{gpu_t:.0f}°C", fg=self._tc(gpu_t))
+            else:
+                self.lbl["gpu_t"].config(text="--°C", fg=T_MID)
+                
+            # GPU Load
+            if gpu_load is not None:
+                self.lbl["gpu_p"].config(text=f"{gpu_load:.0f}%", fg=self._tc(gpu_load))
+            else:
+                self.lbl["gpu_p"].config(text="--%", fg=T_MID)
+                
+            # GPU Power
+            if gpu_w is not None:
+                self.lbl["gpu_w"].config(text=f"{gpu_w:.0f}W", fg="#7baef7")
+            else:
+                self.lbl["gpu_w"].config(text="--W", fg=T_MID)
+                
+            # GPU Clock
+            if gpu_clock is not None:
+                self.lbl["gpu_c"].config(
+                    text=f"{gpu_clock/1000:.2f}GHz" if gpu_clock >= 1000 else f"{gpu_clock:.0f}MHz",
+                    fg=C_PURPLE
+                )
+            else:
+                self.lbl["gpu_c"].config(text="--MHz", fg=T_MID)
+                
+            # RAM
+            if ram_gb is not None:
+                total_ram = psutil.virtual_memory().total / (1024**3)
+                self.lbl["ram"].config(text=f"{ram_gb:.1f}GB / {total_ram:.1f}GB")
+            else:
+                self.lbl["ram"].config(text="--GB / --GB")
+                
+            # Battery
+            if bat_pct is not None:
+                self.lbl["bat"].config(text=f"{bat_pct:.0f}%")
+            else:
+                self.lbl["bat"].config(text="--%")
+                
+        else: # Compact Widget Bar
+            if cpu_t is not None: self._set("cpu_t", f"{cpu_t:.0f}",  self._tc(cpu_t))
+            else:                  self._set("cpu_t", "--",           T_MID)
+            if cpu_w is not None: self._set("cpu_w", f"{cpu_w:.0f}",  "#e2a84b")
+            else:                  self._set("cpu_w", "--",           T_MID)
+            if gpu_t is not None: self._set("gpu_t", f"{gpu_t:.0f}",  self._tc(gpu_t))
+            else:                  self._set("gpu_t", "--",           T_MID)
+            if gpu_w is not None: self._set("gpu_w", f"{gpu_w:.0f}",  "#7baef7")
+            else:                  self._set("gpu_w", "--",           T_MID)
+            if cpu_p is not None: self._set("cpu_p", f"{cpu_p:.0f}",  self._tc(cpu_p))
+            else:                  self._set("cpu_p", "--",           T_MID)
+            if ram_gb is not None: self._set("ram",   f"{ram_gb:.1f}", C_PURPLE)
+            else:                  self._set("ram",   "--",           T_MID)
+            if bat_pct is not None:
+                bc = C_EMERALD if bat_pct > 20 else "#ef4444"
+                self._set("bat", f"{bat_pct:.0f}", bc)
+            else:
+                self._set("bat", "--", T_MID)
+            if freq_ghz is not None: self._set("freq", f"{freq_ghz:.2f}", T_MID)
+            else:                     self._set("freq", "--",              T_MID)
     # â”€â”€ Drag â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def _bind_drag(self):
         self._dx = self._dy = 0
@@ -764,6 +974,29 @@ class OverlayBar:
 
     def _drag_move(self, e):
         self.win.geometry(f"+{e.x_root-self._dx}+{e.y_root-self._dy}")
+
+    def reset_position(self):
+        """Place the overlay above the taskbar in the bottom-right corner."""
+        self.win.update_idletasks()
+        margin = 20
+        screen_width = self.win.winfo_screenwidth()
+        screen_height = self.win.winfo_screenheight()
+        window_width = self.win.winfo_reqwidth()
+        window_height = self.win.winfo_reqheight()
+        x = max(margin, screen_width - window_width - margin)
+        y = max(margin, screen_height - window_height - 60)
+        self.win.geometry(f"+{x}+{y}")
+
+
+    def set_lock(self, locked: bool):
+        """Lock/unlock the overlay position. When locked, dragging is disabled."""
+        self.locked = locked
+        if locked:
+            for w in self._all_widgets:
+                w.unbind('<ButtonPress-1>')
+                w.unbind('<B1-Motion>')
+        else:
+            self._bind_drag()
 
     # â”€â”€ Context menu â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def _build_menu(self, root):
@@ -838,29 +1071,76 @@ draw_ring = draw_gauge   # keep alias for any remaining references
 
 
 # \u2500\u2500\u2500 Main App \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+def _hotkey_loop(app):
+    import ctypes
+    from ctypes import wintypes
+    import win32con
+    
+    user32 = ctypes.windll.user32
+    
+    # MOD_CONTROL = 0x0002, MOD_SHIFT = 0x0004
+    MOD_CTRL_SHIFT = 0x0002 | 0x0004
+    
+    # Register hotkeys
+    # ID 1: Ctrl+Shift+O (Show/Hide)
+    # ID 2: Ctrl+Shift+L (Lock/Unlock)
+    # ID 3: Ctrl+Shift+R (Reset position)
+    user32.RegisterHotKey(None, 1, MOD_CTRL_SHIFT, 0x4F) # O
+    user32.RegisterHotKey(None, 2, MOD_CTRL_SHIFT, 0x4C) # L
+    user32.RegisterHotKey(None, 3, MOD_CTRL_SHIFT, 0x52) # R
+    
+    try:
+        msg = wintypes.MSG()
+        while user32.GetMessageW(ctypes.byref(msg), None, 0, 0) != 0:
+            if msg.message == win32con.WM_HOTKEY:
+                hk_id = msg.wParam
+                if hk_id == 1:
+                    app.root.after(0, app.toggle_osd_visibility_from_hotkey)
+                elif hk_id == 2:
+                    app.root.after(0, app.toggle_osd_lock_from_hotkey)
+                elif hk_id == 3:
+                    app.root.after(0, app.overlay.reset_position)
+            user32.TranslateMessage(ctypes.byref(msg))
+            user32.DispatchMessageW(ctypes.byref(msg))
+    except Exception as e:
+        _write_log(f"Hotkey loop crash: {e}")
+    finally:
+        user32.UnregisterHotKey(None, 1)
+        user32.UnregisterHotKey(None, 2)
+        user32.UnregisterHotKey(None, 3)
+
+
 class StatusMonitor:
     def __init__(self, root):
         self.root = root
-        root.title("\u26a1 System Monitor")
+        root.title("⚡ System Monitor")
         root.configure(fg_color=BG_DARK)
         root.resizable(False, False)
-        w, h = 520, 620
+        w, h = 540, 680
         sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
         root.geometry(f"{w}x{h}+{(sw-w)//2}+{(sh-h)//2}")
-        self._build_ui()
+        
         self.overlay = OverlayBar(root, self.show_window, self.quit_app)
+        self._build_ui()
+        
+        # Sync initial overlay options
+        self._osd_rebuild()
+        
         start_tray(self)
         threading.Thread(target=_temp_loop, daemon=True).start()
+        threading.Thread(target=_hotkey_loop, args=(self,), daemon=True).start()
+        
         self._update_stats()
         self.root.protocol("WM_DELETE_WINDOW", self.hide_window)
 
     def _build_ui(self):
+        # Persistent Header
         hdr = ctk.CTkFrame(self.root, fg_color="transparent")
         hdr.pack(fill="x", padx=20, pady=(18, 6))
 
         lft = ctk.CTkFrame(hdr, fg_color="transparent")
         lft.pack(side="left")
-        ctk.CTkLabel(lft, text="\u26a1", text_color=C_CYAN,
+        ctk.CTkLabel(lft, text="⚡", text_color=C_CYAN,
                      font=ctk.CTkFont("Segoe UI", 24)).pack(side="left")
         ctk.CTkLabel(lft, text=" SYSTEM", text_color=T_BRIGHT,
                      font=ctk.CTkFont("Segoe UI", 17, "bold")).pack(side="left")
@@ -875,15 +1155,28 @@ class StatusMonitor:
         self.time_lbl.pack(anchor="e")
         bdg = ctk.CTkFrame(rgt, fg_color="transparent")
         bdg.pack(anchor="e", pady=(2, 0))
-        ctk.CTkLabel(bdg, text="\u25cf LIVE", text_color=C_EMERALD,
+        ctk.CTkLabel(bdg, text="● LIVE", text_color=C_EMERALD,
                      font=ctk.CTkFont("Segoe UI", 7, "bold")).pack(side="left", padx=(0, 8))
-        ctk.CTkLabel(bdg, text="\ud83d\udee1 ADMIN", text_color=C_CYAN,
+        ctk.CTkLabel(bdg, text="🛡 ADMIN", text_color=C_CYAN,
                      font=ctk.CTkFont("Segoe UI", 7, "bold")).pack(side="left")
 
         ctk.CTkFrame(self.root, height=1, fg_color=CARD_BD).pack(fill="x", padx=16)
 
-        # \u2500\u2500 Top row: 3 gauge cards \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-        top = ctk.CTkFrame(self.root, fg_color="transparent")
+        # Tab view
+        self.tabview = ctk.CTkTabview(
+            self.root,
+            fg_color="transparent",
+            segmented_button_fg_color=CARD_BG,
+            segmented_button_selected_color=CARD_BD,
+            text_color=T_BRIGHT,
+        )
+        self.tabview.pack(fill="both", expand=True, padx=10, pady=(5, 5))
+        
+        self.tab_dash = self.tabview.add("DASHBOARD")
+        self.tab_osd = self.tabview.add("OSD OVERLAY")
+
+        # --- Tab 1: DASHBOARD ---
+        top = ctk.CTkFrame(self.tab_dash, fg_color="transparent")
         top.pack(fill="x", padx=10, pady=(10, 0))
         for i in range(3):
             top.columnconfigure(i, weight=1)
@@ -892,28 +1185,198 @@ class StatusMonitor:
         self.ram_canvas, self.ram_sub = self._gauge_card(top, 1, "MEMORY",     C_PURPLE)
         self.bat_canvas, self.bat_sub = self._gauge_card(top, 2, "BATTERY",    C_EMERALD)
 
-        # \u2500\u2500 Bottom row: CPU Temp + GPU \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-        bot = ctk.CTkFrame(self.root, fg_color="transparent")
+        bot = ctk.CTkFrame(self.tab_dash, fg_color="transparent")
         bot.pack(fill="both", expand=True, padx=10, pady=(8, 10))
         bot.columnconfigure(0, weight=1)
         bot.columnconfigure(1, weight=1)
         bot.rowconfigure(0, weight=1)
+        
         self._cpu_temp_card(bot)
         self._gpu_card(bot)
 
-        # \u2500\u2500 Status bar \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-        bar = ctk.CTkFrame(self.root, fg_color="#090c18",
-                            corner_radius=0, height=26)
+        # --- Tab 2: OSD OVERLAY ---
+        self._build_osd_tab()
+
+        # Persistent Status Bar
+        bar = ctk.CTkFrame(self.root, fg_color="#090c18", corner_radius=0, height=26)
         bar.pack(fill="x", side="bottom")
         bar.pack_propagate(False)
-        ctk.CTkFrame(bar, width=5, fg_color=C_EMERALD,
-                      corner_radius=0).pack(side="left", fill="y")
-        ctk.CTkLabel(bar, text="Live  \u2022  0.5 s refresh  \u2022  LHM powered",
-                      text_color=T_MID,
-                      font=ctk.CTkFont("Segoe UI", 8)).pack(side="left", padx=8)
-        ctk.CTkLabel(bar, text=f"{platform.system()} {platform.release()}",
-                      text_color=T_MID,
-                      font=ctk.CTkFont("Segoe UI", 8)).pack(side="right", padx=10)
+        ctk.CTkFrame(bar, width=5, fg_color=C_EMERALD, corner_radius=0).pack(side="left", fill="y")
+        ctk.CTkLabel(bar, text="Live  •  0.5 s refresh  •  LHM powered", text_color=T_MID, font=ctk.CTkFont("Segoe UI", 8)).pack(side="left", padx=8)
+        ctk.CTkLabel(bar, text=f"{platform.system()} {platform.release()}", text_color=T_MID, font=ctk.CTkFont("Segoe UI", 8)).pack(side="right", padx=10)
+
+    def _build_osd_tab(self):
+        container = ctk.CTkScrollableFrame(self.tab_osd, fg_color="transparent")
+        container.pack(fill="both", expand=True, padx=5, pady=5)
+        
+        # OSD Controls Card
+        card_ctrl = ctk.CTkFrame(container, fg_color=CARD_BG, border_width=1, border_color=CARD_BD, corner_radius=12)
+        card_ctrl.pack(fill="x", pady=(5, 10), padx=5)
+        
+        ctk.CTkLabel(card_ctrl, text="OSD CONTROL & LOCK", text_color=C_CYAN,
+                     font=ctk.CTkFont("Segoe UI", 9, "bold")).pack(anchor="w", padx=15, pady=(12, 8))
+                     
+        ctrl_grid = ctk.CTkFrame(card_ctrl, fg_color="transparent")
+        ctrl_grid.pack(fill="x", padx=15, pady=(0, 12))
+        
+        self._osd_enable_var = ctk.BooleanVar(value=True)
+        self._osd_enable_sw = ctk.CTkSwitch(
+            ctrl_grid, text="Enable OSD Overlay", variable=self._osd_enable_var,
+            text_color=T_BRIGHT, font=ctk.CTkFont("Segoe UI", 11, "bold"),
+            button_color=C_INDIGO, progress_color=C_INDIGO,
+            command=self._on_osd_enable_toggle
+        )
+        self._osd_enable_sw.pack(side="left", expand=True, fill="x", padx=5)
+        
+        self._osd_lock_var = ctk.BooleanVar(value=False)
+        self._osd_lock_sw = ctk.CTkSwitch(
+            ctrl_grid, text="Lock (Click-Through)", variable=self._osd_lock_var,
+            text_color=T_BRIGHT, font=ctk.CTkFont("Segoe UI", 11, "bold"),
+            button_color=C_EMERALD, progress_color=C_EMERALD,
+            command=self._on_osd_lock_toggle
+        )
+        self._osd_lock_sw.pack(side="left", expand=True, fill="x", padx=5)
+
+        # OSD Customization Card
+        card_custom = ctk.CTkFrame(container, fg_color=CARD_BG, border_width=1, border_color=CARD_BD, corner_radius=12)
+        card_custom.pack(fill="x", pady=10, padx=5)
+        
+        ctk.CTkLabel(card_custom, text="OSD APPEARANCE & CUSTOMIZATION", text_color=C_INDIGO,
+                     font=ctk.CTkFont("Segoe UI", 9, "bold")).pack(anchor="w", padx=15, pady=(12, 10))
+        
+        grid = ctk.CTkFrame(card_custom, fg_color="transparent")
+        grid.pack(fill="x", padx=15, pady=(0, 12))
+        
+        # Row 1: Style
+        r1 = ctk.CTkFrame(grid, fg_color="transparent")
+        r1.pack(fill="x", pady=5)
+        ctk.CTkLabel(r1, text="Overlay Style:", text_color=T_MID, font=ctk.CTkFont("Segoe UI", 10, "bold")).pack(side="left", padx=(0, 10))
+        self._osd_style_menu = ctk.CTkOptionMenu(
+            r1, values=["MSI Afterburner (HUD)", "Compact Widget Bar"],
+            fg_color=CARD_BD, button_color=CARD_BD, button_hover_color=C_INDIGO,
+            font=ctk.CTkFont("Segoe UI", 10), dropdown_font=ctk.CTkFont("Segoe UI", 10),
+            command=self._on_osd_style_change
+        )
+        self._osd_style_menu.set("MSI Afterburner (HUD)")
+        self._osd_style_menu.pack(side="left", fill="x", expand=True)
+        
+        # Row 2: BG Mode
+        r2 = ctk.CTkFrame(grid, fg_color="transparent")
+        r2.pack(fill="x", pady=5)
+        ctk.CTkLabel(r2, text="BG Mode:     ", text_color=T_MID, font=ctk.CTkFont("Segoe UI", 10, "bold")).pack(side="left", padx=(0, 10))
+        self._osd_bg_menu = ctk.CTkOptionMenu(
+            r2, values=["Translucent Dark", "Fully Transparent"],
+            fg_color=CARD_BD, button_color=CARD_BD, button_hover_color=C_INDIGO,
+            font=ctk.CTkFont("Segoe UI", 10), dropdown_font=ctk.CTkFont("Segoe UI", 10),
+            command=self._on_osd_bg_change
+        )
+        self._osd_bg_menu.set("Translucent Dark")
+        self._osd_bg_menu.pack(side="left", fill="x", expand=True)
+
+        # Row 3: Font Size
+        r3 = ctk.CTkFrame(grid, fg_color="transparent")
+        r3.pack(fill="x", pady=5)
+        ctk.CTkLabel(r3, text="Font Size:   ", text_color=T_MID, font=ctk.CTkFont("Segoe UI", 10, "bold")).pack(side="left", padx=(0, 10))
+        self._osd_fs_menu = ctk.CTkOptionMenu(
+            r3, values=["Small", "Medium", "Large", "Extra Large"],
+            fg_color=CARD_BD, button_color=CARD_BD, button_hover_color=C_INDIGO,
+            font=ctk.CTkFont("Segoe UI", 10), dropdown_font=ctk.CTkFont("Segoe UI", 10),
+            command=self._on_osd_fs_change
+        )
+        self._osd_fs_menu.set("Medium")
+        self._osd_fs_menu.pack(side="left", fill="x", expand=True)
+        
+        # Row 4: Opacity slider
+        r4 = ctk.CTkFrame(grid, fg_color="transparent")
+        r4.pack(fill="x", pady=10)
+        ctk.CTkLabel(r4, text="Opacity:", text_color=T_MID, font=ctk.CTkFont("Segoe UI", 10, "bold")).pack(side="left", padx=(0, 15))
+        self._osd_opacity_slider = ctk.CTkSlider(
+            r4, from_=0.3, to=1.0, number_of_steps=70,
+            button_color=C_INDIGO, progress_color=C_INDIGO,
+            command=self._on_osd_opacity_change
+        )
+        self._osd_opacity_slider.set(0.93)
+        self._osd_opacity_slider.pack(side="left", fill="x", expand=True)
+        
+        self.op_val_lbl = ctk.CTkLabel(r4, text="93%", text_color=T_BRIGHT, font=ctk.CTkFont("Segoe UI", 10, "bold"))
+        self.op_val_lbl.pack(side="right", padx=(10, 0))
+
+        # Position reset
+        reset_btn = ctk.CTkButton(
+            card_custom, text="Reset Overlay Position",
+            fg_color=CARD_BD, hover_color=C_PURPLE,
+            font=ctk.CTkFont("Segoe UI", 10, "bold"),
+            command=self.overlay.reset_position
+        )
+        reset_btn.pack(fill="x", padx=15, pady=(5, 12))
+
+        # Hotkeys Card
+        card_info = ctk.CTkFrame(container, fg_color="#181a30", border_width=1, border_color=CARD_BD, corner_radius=12)
+        card_info.pack(fill="x", pady=(10, 5), padx=5)
+        
+        ctk.CTkLabel(card_info, text="⌨️  OSD KEYBOARD SHORTCUTS", text_color=C_EMERALD,
+                     font=ctk.CTkFont("Segoe UI", 9, "bold")).pack(anchor="w", padx=15, pady=(12, 4))
+                     
+        shortcuts = (
+            "• Ctrl + Shift + O : Toggle OSD visibility (Show/Hide)\n"
+            "• Ctrl + Shift + L : Toggle Click-through lock (Lock/Unlock)\n"
+            "• Ctrl + Shift + R : Reset overlay position to default corner"
+        )
+        info_lbl = ctk.CTkLabel(card_info, text=shortcuts, text_color=T_MID,
+                                font=ctk.CTkFont("Segoe UI", 9), justify="left")
+        info_lbl.pack(anchor="w", padx=15, pady=(0, 12))
+
+    def _on_osd_enable_toggle(self):
+        if self._osd_enable_var.get():
+            self.overlay.show()
+        else:
+            self.overlay.hide()
+            
+    def _on_osd_lock_toggle(self):
+        self.overlay.set_lock(self._osd_lock_var.get())
+        
+    def _on_osd_style_change(self, value):
+        self._osd_rebuild()
+        self.overlay.reset_position()
+        
+    def _on_osd_bg_change(self, value):
+        self._osd_rebuild()
+        
+    def _on_osd_fs_change(self, value):
+        self._osd_rebuild()
+        
+    def _on_osd_opacity_change(self, value):
+        opacity = float(value)
+        self.op_val_lbl.configure(text=f"{int(opacity * 100)}%")
+        self.overlay.win.wm_attributes("-alpha", opacity)
+        
+    def _osd_rebuild(self):
+        style = self._osd_style_menu.get()
+        bg = self._osd_bg_menu.get()
+        opacity = self._osd_opacity_slider.get()
+        fs = self._osd_fs_menu.get()
+        locked = self._osd_lock_var.get()
+        
+        self.overlay.locked = locked
+        self.overlay.rebuild_layout(style, bg, opacity, fs)
+
+    def toggle_osd_lock_from_hotkey(self):
+        new_state = not self._osd_lock_var.get()
+        self._osd_lock_var.set(new_state)
+        if new_state:
+            self._osd_lock_sw.select()
+        else:
+            self._osd_lock_sw.deselect()
+        self.overlay.set_lock(new_state)
+
+    def toggle_osd_visibility_from_hotkey(self):
+        new_state = not self._osd_enable_var.get()
+        self._osd_enable_var.set(new_state)
+        if new_state:
+            self._osd_enable_sw.select()
+        else:
+            self._osd_enable_sw.deselect()
+        self.overlay.toggle()
 
     # \u2500\u2500 Gauge card \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
     def _gauge_card(self, parent, col, title, color):
@@ -1152,7 +1615,8 @@ class StatusMonitor:
         bat_pct  = bat.percent if bat else None
         update_tray(temp_val, gpu_val, cpu)
         self.overlay.update(temp_val, gpu_val, cpu, ram_gb, bat_pct,
-                            freq_ghz, cpu_w=cpu_w, gpu_w=gpu_w)
+                            freq_ghz, cpu_w=cpu_w, gpu_w=gpu_w,
+                            gpu_load=gpu_load, gpu_clock=gpu_clock)
 
         self.root.after(500, self._update_stats)
 

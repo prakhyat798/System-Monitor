@@ -1050,7 +1050,7 @@ def draw_gauge(canvas, value, color, size=114):
     # Background track
     canvas.create_arc(cx-r, cy-r, cx+r, cy+r,
                       start=225, extent=-240,
-                      style="arc", outline="#111826", width=17)
+                      style="arc", outline="#141c2e", width=17)
     if value > 0:
         ext = -(value / 100) * 240
         # Glow layers — wide+dim  →  narrow+bright
@@ -1116,7 +1116,7 @@ class StatusMonitor:
         root.title("⚡ System Monitor")
         root.configure(fg_color=BG_DARK)
         root.resizable(False, False)
-        w, h = 540, 680
+        w, h = 1060, 780
         sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
         root.geometry(f"{w}x{h}+{(sw-w)//2}+{(sh-h)//2}")
         
@@ -1134,83 +1134,162 @@ class StatusMonitor:
         self.root.protocol("WM_DELETE_WINDOW", self.hide_window)
 
     def _build_ui(self):
-        # Persistent Header
-        hdr = ctk.CTkFrame(self.root, fg_color="transparent")
-        hdr.pack(fill="x", padx=20, pady=(18, 6))
+        shell = ctk.CTkFrame(self.root, fg_color=BG_DARK, corner_radius=0)
+        shell.pack(fill="both", expand=True)
 
-        lft = ctk.CTkFrame(hdr, fg_color="transparent")
-        lft.pack(side="left")
-        ctk.CTkLabel(lft, text="⚡", text_color=C_CYAN,
-                     font=ctk.CTkFont("Segoe UI", 24)).pack(side="left")
-        ctk.CTkLabel(lft, text=" SYSTEM", text_color=T_BRIGHT,
-                     font=ctk.CTkFont("Segoe UI", 17, "bold")).pack(side="left")
-        ctk.CTkLabel(lft, text=" MONITOR", text_color=C_INDIGO,
-                     font=ctk.CTkFont("Segoe UI", 17, "bold")).pack(side="left")
+        # ── Sidebar ──────────────────────────────────────────────────
+        sidebar = ctk.CTkFrame(shell, width=68, fg_color="#080c16", corner_radius=0,
+                               border_width=1, border_color="#151d30")
+        sidebar.pack(side="left", fill="y")
+        sidebar.pack_propagate(False)
+        ctk.CTkLabel(sidebar, text="\u26a1", width=36, height=36, corner_radius=10,
+                     fg_color="#1a2744", text_color=C_CYAN,
+                     font=ctk.CTkFont("Segoe UI", 18, "bold")).pack(pady=(20, 24))
+        for icon, active in (("\u2302", True), ("\u25a6", False), ("\u2341", False), ("\u25eb", False), ("\u2699", False)):
+            ctk.CTkLabel(sidebar, text=icon, width=36, height=36, corner_radius=10,
+                         fg_color="#162040" if active else "transparent",
+                         text_color=C_CYAN if active else "#3a4560",
+                         font=ctk.CTkFont("Segoe UI Symbol", 17, "bold")).pack(pady=4)
+        ctk.CTkLabel(sidebar, text="\u25cf\nLIVE", text_color=C_EMERALD,
+                     font=ctk.CTkFont("Segoe UI", 7, "bold"), justify="center").pack(side="bottom", pady=16)
 
-        rgt = ctk.CTkFrame(hdr, fg_color="transparent")
-        rgt.pack(side="right")
-        self.time_lbl = ctk.CTkLabel(rgt, text="",
-                                      text_color=T_MID,
-                                      font=ctk.CTkFont("Segoe UI", 9))
-        self.time_lbl.pack(anchor="e")
-        bdg = ctk.CTkFrame(rgt, fg_color="transparent")
-        bdg.pack(anchor="e", pady=(2, 0))
-        ctk.CTkLabel(bdg, text="● LIVE", text_color=C_EMERALD,
-                     font=ctk.CTkFont("Segoe UI", 7, "bold")).pack(side="left", padx=(0, 8))
-        ctk.CTkLabel(bdg, text="🛡 ADMIN", text_color=C_CYAN,
-                     font=ctk.CTkFont("Segoe UI", 7, "bold")).pack(side="left")
+        # ── Main content area ────────────────────────────────────────
+        main = ctk.CTkFrame(shell, fg_color="transparent", corner_radius=0)
+        main.pack(side="left", fill="both", expand=True, padx=(16, 18), pady=(14, 12))
 
-        ctk.CTkFrame(self.root, height=1, fg_color=CARD_BD).pack(fill="x", padx=16)
+        # ── Header ───────────────────────────────────────────────────
+        header = ctk.CTkFrame(main, fg_color="transparent")
+        header.pack(fill="x", pady=(0, 10))
+        title_frame = ctk.CTkFrame(header, fg_color="transparent")
+        title_frame.pack(side="left")
+        title_row = ctk.CTkFrame(title_frame, fg_color="transparent")
+        title_row.pack(anchor="w")
+        ctk.CTkLabel(title_row, text="\u26a1", text_color=C_CYAN,
+                     font=ctk.CTkFont("Segoe UI", 20)).pack(side="left")
+        ctk.CTkLabel(title_row, text="  System Monitor", text_color=T_BRIGHT,
+                     font=ctk.CTkFont("Segoe UI", 18, "bold")).pack(side="left")
+        ctk.CTkLabel(title_frame, text="Home  \u203a  Dashboard", text_color="#3a4560",
+                     font=ctk.CTkFont("Segoe UI", 9)).pack(anchor="w", pady=(3, 0))
+        status_badge = ctk.CTkFrame(header, fg_color="#0c1320", corner_radius=12,
+                                    border_width=1, border_color="#1a2844")
+        status_badge.pack(side="right")
+        self.time_lbl = ctk.CTkLabel(status_badge, text="", text_color=T_BRIGHT,
+                                      font=ctk.CTkFont("Segoe UI", 11, "bold"))
+        self.time_lbl.pack(padx=14, pady=(7, 0))
+        ctk.CTkLabel(status_badge, text="\u25cf  LIVE", text_color=C_EMERALD,
+                     font=ctk.CTkFont("Segoe UI", 7, "bold")).pack(padx=14, pady=(1, 7))
 
-        # Tab view
+        # ── Tabview ──────────────────────────────────────────────────
         self.tabview = ctk.CTkTabview(
-            self.root,
-            fg_color="transparent",
-            segmented_button_fg_color=CARD_BG,
-            segmented_button_selected_color=CARD_BD,
+            main, fg_color="transparent", corner_radius=0,
+            segmented_button_fg_color="#0c1322",
+            segmented_button_selected_color="#1a2d52",
+            segmented_button_selected_hover_color="#243c64",
+            segmented_button_unselected_color="#0c1322",
+            segmented_button_unselected_hover_color="#141f36",
             text_color=T_BRIGHT,
         )
-        self.tabview.pack(fill="both", expand=True, padx=10, pady=(5, 5))
-        
+        self.tabview.pack(fill="both", expand=True)
+
         self.tab_dash = self.tabview.add("DASHBOARD")
         self.tab_osd = self.tabview.add("OSD OVERLAY")
 
-        # --- Tab 1: DASHBOARD ---
-        top = ctk.CTkFrame(self.tab_dash, fg_color="transparent")
-        top.pack(fill="x", padx=10, pady=(10, 0))
+        # ════════════ DASHBOARD TAB ════════════
+
+        # ── Row 1: CPU Stats + GPU Stats (table panels) ─────────────
+        stats_row = ctk.CTkFrame(self.tab_dash, fg_color="transparent")
+        stats_row.pack(fill="x", padx=2, pady=(8, 4))
+        stats_row.columnconfigure(0, weight=1)
+        stats_row.columnconfigure(1, weight=1)
+
+        # CPU Stats panel
+        cpu_panel = ctk.CTkFrame(stats_row, fg_color="#0d1420", corner_radius=14,
+                                  border_width=1, border_color="#1a2640")
+        cpu_panel.grid(row=0, column=0, padx=(0, 5), sticky="nsew")
+        cpu_hdr = ctk.CTkFrame(cpu_panel, fg_color="transparent")
+        cpu_hdr.pack(fill="x", padx=18, pady=(14, 0))
+        ctk.CTkLabel(cpu_hdr, text="CPU Stats", text_color=C_CYAN,
+                     font=ctk.CTkFont("Segoe UI", 12, "bold")).pack(side="left")
+        ctk.CTkLabel(cpu_hdr, text="\u25cf", text_color=C_CYAN,
+                     font=ctk.CTkFont("Segoe UI", 8)).pack(side="right")
+        ctk.CTkFrame(cpu_panel, height=1, fg_color="#1a2640").pack(fill="x", padx=18, pady=(8, 0))
+        cpu_tbl = ctk.CTkFrame(cpu_panel, fg_color="transparent")
+        cpu_tbl.pack(fill="x", padx=18, pady=(8, 14))
+        self.cpu_freq_stat = self._stat_row(cpu_tbl, "Frequency", "--", T_BRIGHT)
+        self.cpu_usage_stat = self._stat_row(cpu_tbl, "Usage", "--%", C_EMERALD)
+        self.cpu_temp_stat = self._stat_row(cpu_tbl, "Temperature", "--\u00b0C", C_AMBER)
+        self.cpu_power_stat = self._stat_row(cpu_tbl, "Power", "-- W", C_AMBER)
+        self.cpu_cores_stat = self._stat_row(cpu_tbl, "Cores", str(psutil.cpu_count()), "#4a5568")
+
+        # GPU Stats panel
+        gpu_panel = ctk.CTkFrame(stats_row, fg_color="#0d1420", corner_radius=14,
+                                  border_width=1, border_color="#1a2640")
+        gpu_panel.grid(row=0, column=1, padx=(5, 0), sticky="nsew")
+        gpu_hdr = ctk.CTkFrame(gpu_panel, fg_color="transparent")
+        gpu_hdr.pack(fill="x", padx=18, pady=(14, 0))
+        ctk.CTkLabel(gpu_hdr, text="GPU Stats", text_color=C_PINK,
+                     font=ctk.CTkFont("Segoe UI", 12, "bold")).pack(side="left")
+        ctk.CTkLabel(gpu_hdr, text="\u25cf", text_color=C_PINK,
+                     font=ctk.CTkFont("Segoe UI", 8)).pack(side="right")
+        ctk.CTkFrame(gpu_panel, height=1, fg_color="#1a2640").pack(fill="x", padx=18, pady=(8, 0))
+        gpu_tbl = ctk.CTkFrame(gpu_panel, fg_color="transparent")
+        gpu_tbl.pack(fill="x", padx=18, pady=(8, 14))
+        self.gpu_freq_stat = self._stat_row(gpu_tbl, "Frequency", "-- MHz", C_PURPLE)
+        self.gpu_temp_stat2 = self._stat_row(gpu_tbl, "Temperature", "--\u00b0C", C_PINK)
+        self.gpu_power_stat2 = self._stat_row(gpu_tbl, "Power", "-- W", C_PINK)
+        self.gpu_util_stat = self._stat_row(gpu_tbl, "Utilization", "--%", C_INDIGO)
+        self.gpu_device_stat = self._stat_row(gpu_tbl, "Device", "Detecting...", "#4a5568")
+
+        # ── Row 2: Gauge cards ───────────────────────────────────────
+        gauge_row = ctk.CTkFrame(self.tab_dash, fg_color="transparent")
+        gauge_row.pack(fill="x", padx=2, pady=(4, 4))
         for i in range(3):
-            top.columnconfigure(i, weight=1)
+            gauge_row.columnconfigure(i, weight=1)
 
-        self.cpu_canvas, self.cpu_sub = self._gauge_card(top, 0, "CPU  LOAD",  C_INDIGO)
-        self.ram_canvas, self.ram_sub = self._gauge_card(top, 1, "MEMORY",     C_PURPLE)
-        self.bat_canvas, self.bat_sub = self._gauge_card(top, 2, "BATTERY",    C_EMERALD)
+        self.cpu_canvas, self.cpu_sub = self._gauge_card(gauge_row, 0, "CPU LOAD", C_INDIGO)
+        self.ram_canvas, self.ram_sub = self._gauge_card(gauge_row, 1, "MEMORY", C_PURPLE)
+        self.bat_canvas, self.bat_sub = self._gauge_card(gauge_row, 2, "BATTERY", C_EMERALD)
 
-        bot = ctk.CTkFrame(self.tab_dash, fg_color="transparent")
-        bot.pack(fill="both", expand=True, padx=10, pady=(8, 10))
-        bot.columnconfigure(0, weight=1)
-        bot.columnconfigure(1, weight=1)
-        bot.rowconfigure(0, weight=1)
-        
-        self._cpu_temp_card(bot)
-        self._gpu_card(bot)
+        # ── Row 3: CPU Thermals + GPU Monitor ────────────────────────
+        bottom_row = ctk.CTkFrame(self.tab_dash, fg_color="transparent")
+        bottom_row.pack(fill="x", padx=2, pady=(4, 4))
+        bottom_row.columnconfigure(0, weight=3)
+        bottom_row.columnconfigure(1, weight=2)
 
-        # --- Tab 2: OSD OVERLAY ---
+        self._cpu_temp_card(bottom_row)
+        self._gpu_card(bottom_row)
+
+        # ── OSD Tab ──────────────────────────────────────────────────
         self._build_osd_tab()
 
-        # Persistent Status Bar
-        bar = ctk.CTkFrame(self.root, fg_color="#090c18", corner_radius=0, height=26)
-        bar.pack(fill="x", side="bottom")
+        # ── Status bar ───────────────────────────────────────────────
+        bar = ctk.CTkFrame(main, fg_color="#0a0e18", corner_radius=8, height=26)
+        bar.pack(fill="x", pady=(6, 0))
         bar.pack_propagate(False)
-        ctk.CTkFrame(bar, width=5, fg_color=C_EMERALD, corner_radius=0).pack(side="left", fill="y")
-        ctk.CTkLabel(bar, text="Live  •  0.5 s refresh  •  LHM powered", text_color=T_MID, font=ctk.CTkFont("Segoe UI", 8)).pack(side="left", padx=8)
-        ctk.CTkLabel(bar, text=f"{platform.system()} {platform.release()}", text_color=T_MID, font=ctk.CTkFont("Segoe UI", 8)).pack(side="right", padx=10)
+        ctk.CTkLabel(bar, text="\u25cf  Live data \u00b7 0.5s refresh \u00b7 LHM powered",
+                     text_color="#3a4560",
+                     font=ctk.CTkFont("Segoe UI", 8)).pack(side="left", padx=12)
+        ctk.CTkLabel(bar, text=f"{platform.system()} {platform.release()}",
+                     text_color="#3a4560",
+                     font=ctk.CTkFont("Segoe UI", 8)).pack(side="right", padx=12)
+
+    def _stat_row(self, parent, label, initial_value, value_color):
+        """Create a label:value row for the stats table. Returns the value label."""
+        row = ctk.CTkFrame(parent, fg_color="transparent")
+        row.pack(fill="x", pady=3)
+        ctk.CTkLabel(row, text=label, text_color="#4a5568",
+                     font=ctk.CTkFont("Segoe UI", 10)).pack(side="left")
+        val = ctk.CTkLabel(row, text=initial_value, text_color=value_color,
+                           font=ctk.CTkFont("Segoe UI", 10, "bold"))
+        val.pack(side="right")
+        return val
 
     def _build_osd_tab(self):
         container = ctk.CTkScrollableFrame(self.tab_osd, fg_color="transparent")
         container.pack(fill="both", expand=True, padx=5, pady=5)
         
         # OSD Controls Card
-        card_ctrl = ctk.CTkFrame(container, fg_color=CARD_BG, border_width=1, border_color=CARD_BD, corner_radius=12)
+        card_ctrl = ctk.CTkFrame(container, fg_color="#0d1420", border_width=1, border_color="#1a2640", corner_radius=12)
         card_ctrl.pack(fill="x", pady=(5, 10), padx=5)
         
         ctk.CTkLabel(card_ctrl, text="OSD CONTROL & LOCK", text_color=C_CYAN,
@@ -1238,7 +1317,7 @@ class StatusMonitor:
         self._osd_lock_sw.pack(side="left", expand=True, fill="x", padx=5)
 
         # OSD Customization Card
-        card_custom = ctk.CTkFrame(container, fg_color=CARD_BG, border_width=1, border_color=CARD_BD, corner_radius=12)
+        card_custom = ctk.CTkFrame(container, fg_color="#0d1420", border_width=1, border_color="#1a2640", corner_radius=12)
         card_custom.pack(fill="x", pady=10, padx=5)
         
         ctk.CTkLabel(card_custom, text="OSD APPEARANCE & CUSTOMIZATION", text_color=C_INDIGO,
@@ -1311,7 +1390,7 @@ class StatusMonitor:
         reset_btn.pack(fill="x", padx=15, pady=(5, 12))
 
         # Hotkeys Card
-        card_info = ctk.CTkFrame(container, fg_color="#181a30", border_width=1, border_color=CARD_BD, corner_radius=12)
+        card_info = ctk.CTkFrame(container, fg_color="#0f1624", border_width=1, border_color="#1a2640", corner_radius=12)
         card_info.pack(fill="x", pady=(10, 5), padx=5)
         
         ctk.CTkLabel(card_info, text="⌨️  OSD KEYBOARD SHORTCUTS", text_color=C_EMERALD,
@@ -1380,126 +1459,121 @@ class StatusMonitor:
 
     # \u2500\u2500 Gauge card \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
     def _gauge_card(self, parent, col, title, color):
-        card = ctk.CTkFrame(parent, fg_color=CARD_BG, corner_radius=16,
-                             border_width=1, border_color=CARD_BD)
+        card = ctk.CTkFrame(parent, fg_color="#0d1420", corner_radius=14,
+                             border_width=1, border_color="#1a2640")
         card.grid(row=0, column=col, padx=5, pady=5, sticky="nsew")
-        ctk.CTkLabel(card, text=title, text_color=T_MID,
-                      font=ctk.CTkFont("Segoe UI", 8, "bold")).pack(pady=(14, 0))
-        canvas = tk.Canvas(card, width=114, height=114, bg=CARD_BG,
+        label_row = ctk.CTkFrame(card, fg_color="transparent")
+        label_row.pack(fill="x", padx=16, pady=(12, 0))
+        ctk.CTkLabel(label_row, text=title, text_color="#4a5568",
+                      font=ctk.CTkFont("Segoe UI", 9, "bold")).pack(side="left")
+        ctk.CTkLabel(label_row, text="\u25cf", text_color=color,
+                      font=ctk.CTkFont("Segoe UI", 7)).pack(side="right")
+        canvas = tk.Canvas(card, width=114, height=114, bg="#0d1420",
                             highlightthickness=0)
         canvas.pack(pady=(4, 0))
         draw_gauge(canvas, 0, color)
         sub = ctk.CTkLabel(card, text="", text_color=T_MID,
-                            font=ctk.CTkFont("Segoe UI", 8))
-        sub.pack(pady=(3, 14))
+                            font=ctk.CTkFont("Segoe UI", 9))
+        sub.pack(pady=(2, 14))
         return canvas, sub
 
     # \u2500\u2500 CPU Temp card \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
     def _cpu_temp_card(self, parent):
-        card = ctk.CTkFrame(parent, fg_color=CARD_BG, corner_radius=16,
-                             border_width=1, border_color=CARD_BD)
-        card.grid(row=0, column=0, padx=5, pady=5, sticky="nsew")
-        ctk.CTkLabel(card, text="\ud83c\udf21  CPU TEMP", text_color=T_MID,
-                      font=ctk.CTkFont("Segoe UI", 8, "bold")).pack(
-                      anchor="w", padx=20, pady=(18, 2))
+        card = ctk.CTkFrame(parent, fg_color="#0d1420", corner_radius=14,
+                             border_width=1, border_color="#1a2640")
+        card.grid(row=0, column=0, padx=(0, 5), pady=5, sticky="nsew")
+        ctk.CTkLabel(card, text="CPU THERMALS", text_color=C_CYAN,
+                      font=ctk.CTkFont("Segoe UI", 9, "bold")).pack(
+                      anchor="w", padx=18, pady=(16, 2))
+        ctk.CTkLabel(card, text="Package temperature & power", text_color="#4a5568",
+                      font=ctk.CTkFont("Segoe UI", 9)).pack(anchor="w", padx=18)
         self.temp_big = ctk.CTkLabel(card, text="--", text_color=C_AMBER,
-                                      font=ctk.CTkFont("Segoe UI", 54, "bold"))
-        self.temp_big.pack(anchor="w", padx=20, pady=(0, 0))
+                                      font=ctk.CTkFont("Segoe UI", 52, "bold"))
+        self.temp_big.pack(anchor="w", padx=18, pady=(4, 0))
         ur = ctk.CTkFrame(card, fg_color="transparent")
-        ur.pack(anchor="w", padx=20)
+        ur.pack(anchor="w", padx=18)
         self.temp_unit = ctk.CTkLabel(ur, text="\u00b0C", text_color=T_MID,
-                                       font=ctk.CTkFont("Segoe UI", 15))
+                                       font=ctk.CTkFont("Segoe UI", 14))
         self.temp_unit.pack(side="left")
-        self.cpu_w_lbl = ctk.CTkLabel(ur, text="  -- W", text_color=C_AMBER,
-                                       font=ctk.CTkFont("Segoe UI", 14, "bold"))
+        self.cpu_w_lbl = ctk.CTkLabel(ur, text="  \u00b7  -- W", text_color=C_AMBER,
+                                       font=ctk.CTkFont("Segoe UI", 13, "bold"))
         self.cpu_w_lbl.pack(side="left")
         self.temp_sub = ctk.CTkLabel(card, text="Reading...", text_color=T_DIM,
                                       font=ctk.CTkFont("Segoe UI", 7),
                                       wraplength=180, justify="left")
-        self.temp_sub.pack(anchor="w", padx=20, pady=(6, 18))
+        self.temp_sub.pack(anchor="w", padx=18, pady=(6, 16))
 
-    # \u2500\u2500 GPU card \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
     # -- GPU card --
     def _gpu_card(self, parent):
-        card = ctk.CTkFrame(parent, fg_color=CARD_BG, corner_radius=16,
-                             border_width=1, border_color=CARD_BD)
-        card.grid(row=0, column=1, padx=5, pady=5, sticky="nsew")
+        card = ctk.CTkFrame(parent, fg_color="#0d1420", corner_radius=14,
+                             border_width=1, border_color="#1a2640")
+        card.grid(row=0, column=1, padx=(5, 0), pady=5, sticky="nsew")
 
-        # Title row with PERF toggle on the right
         tr = ctk.CTkFrame(card, fg_color="transparent")
-        tr.pack(fill="x", padx=20, pady=(18, 4))
-        ctk.CTkLabel(tr, text="🎮  GPU", text_color=T_MID,
-                      font=ctk.CTkFont("Segoe UI", 8, "bold")).pack(side="left")
+        tr.pack(fill="x", padx=18, pady=(16, 4))
+        ctk.CTkLabel(tr, text="GPU MONITOR", text_color=C_PURPLE,
+                      font=ctk.CTkFont("Segoe UI", 9, "bold")).pack(side="left")
         self.gpu_sub = ctk.CTkLabel(tr, text="Detecting...", text_color=T_DIM,
                                      font=ctk.CTkFont("Segoe UI", 7), wraplength=80)
         self.gpu_sub.pack(side="left", padx=(6, 0))
 
-        # PERF toggle switch
         self._perf_var = ctk.BooleanVar(value=False)
-        self._perf_sw  = ctk.CTkSwitch(
+        self._perf_sw = ctk.CTkSwitch(
             tr, text="PERF", variable=self._perf_var,
-            text_color=T_MID, font=ctk.CTkFont("Segoe UI", 7, "bold"),
+            text_color="#4a5568", font=ctk.CTkFont("Segoe UI", 7, "bold"),
             button_color=C_INDIGO, button_hover_color=C_PURPLE,
             progress_color=C_INDIGO, switch_width=28, switch_height=14,
             command=self._toggle_perf)
         self._perf_sw.pack(side="right")
 
-        # Temperature
         tg = ctk.CTkFrame(card, fg_color="transparent")
-        tg.pack(anchor="w", padx=20)
-        ctk.CTkLabel(tg, text="TEMP", text_color=T_DIM,
+        tg.pack(anchor="w", padx=18)
+        ctk.CTkLabel(tg, text="TEMP", text_color="#4a5568",
                       font=ctk.CTkFont("Segoe UI", 7, "bold")).pack(anchor="w")
         gn = ctk.CTkFrame(tg, fg_color="transparent")
         gn.pack(anchor="w")
         self.gpu_big = ctk.CTkLabel(gn, text="--", text_color=C_PINK,
                                      font=ctk.CTkFont("Segoe UI", 44, "bold"))
         self.gpu_big.pack(side="left")
-        ctk.CTkLabel(gn, text="°C", text_color=T_MID,
-                      font=ctk.CTkFont("Segoe UI", 15)).pack(side="left", pady=(0, 10))
+        ctk.CTkLabel(gn, text="\u00b0C", text_color="#4a5568",
+                      font=ctk.CTkFont("Segoe UI", 14)).pack(side="left", pady=(0, 8))
 
-        # Divider
-        ctk.CTkFrame(card, height=1, fg_color=CARD_BD).pack(fill="x", padx=20, pady=(6, 8))
+        ctk.CTkFrame(card, height=1, fg_color="#1a2640").pack(fill="x", padx=18, pady=(4, 6))
 
-        # Power
         pg = ctk.CTkFrame(card, fg_color="transparent")
-        pg.pack(anchor="w", padx=20, pady=(0, 6))
-        ctk.CTkLabel(pg, text="POWER", text_color=T_DIM,
+        pg.pack(anchor="w", padx=18, pady=(0, 4))
+        ctk.CTkLabel(pg, text="POWER", text_color="#4a5568",
                       font=ctk.CTkFont("Segoe UI", 7, "bold")).pack(anchor="w")
         self.gpu_w_lbl = ctk.CTkLabel(pg, text="-- W", text_color=C_PINK,
-                                       font=ctk.CTkFont("Segoe UI", 32, "bold"))
+                                       font=ctk.CTkFont("Segoe UI", 28, "bold"))
         self.gpu_w_lbl.pack(anchor="w")
 
-        # --- PERF panel (hidden by default) ---
         self._perf_frame = ctk.CTkFrame(card, fg_color="transparent")
-        # Not packed yet; _toggle_perf shows/hides it
 
-        ctk.CTkFrame(self._perf_frame, height=1, fg_color=CARD_BD).pack(
-            fill="x", padx=20, pady=(4, 8))
+        ctk.CTkFrame(self._perf_frame, height=1, fg_color="#1a2640").pack(
+            fill="x", padx=18, pady=(2, 6))
 
         perf_row = ctk.CTkFrame(self._perf_frame, fg_color="transparent")
-        perf_row.pack(fill="x", padx=20, pady=(0, 14))
+        perf_row.pack(fill="x", padx=18, pady=(0, 12))
 
-        # GPU Utilization block
         util_blk = ctk.CTkFrame(perf_row, fg_color="transparent")
         util_blk.pack(side="left")
-        ctk.CTkLabel(util_blk, text="UTIL", text_color=T_DIM,
+        ctk.CTkLabel(util_blk, text="UTIL", text_color="#4a5568",
                       font=ctk.CTkFont("Segoe UI", 7, "bold")).pack(anchor="w")
         self.gpu_util_lbl = ctk.CTkLabel(util_blk, text="--%", text_color=C_INDIGO,
-                                          font=ctk.CTkFont("Segoe UI", 18, "bold"))
+                                          font=ctk.CTkFont("Segoe UI", 16, "bold"))
         self.gpu_util_lbl.pack(anchor="w")
 
-        ctk.CTkFrame(perf_row, width=1, fg_color=CARD_BD).pack(
+        ctk.CTkFrame(perf_row, width=1, fg_color="#1a2640").pack(
             side="left", fill="y", padx=10)
 
-        # GPU Clock block
         clk_blk = ctk.CTkFrame(perf_row, fg_color="transparent")
         clk_blk.pack(side="left")
-        ctk.CTkLabel(clk_blk, text="CLOCK", text_color=T_DIM,
+        ctk.CTkLabel(clk_blk, text="CLOCK", text_color="#4a5568",
                       font=ctk.CTkFont("Segoe UI", 7, "bold")).pack(anchor="w")
         self.gpu_clk_lbl = ctk.CTkLabel(clk_blk, text="-- MHz", text_color=C_PURPLE,
-                                         font=ctk.CTkFont("Segoe UI", 18, "bold"))
+                                         font=ctk.CTkFont("Segoe UI", 16, "bold"))
         self.gpu_clk_lbl.pack(anchor="w")
-
 
     def _toggle_perf(self):
         if self._perf_var.get():
@@ -1543,6 +1617,12 @@ class StatusMonitor:
             text=(f"{freq.current/1000:.2f} GHz  \u2022  {psutil.cpu_count()} cores"
                   if freq else ""))
 
+        # CPU stats table
+        self.cpu_freq_stat.configure(
+            text=f"{freq.current/1000:.2f} GHz" if freq else "--")
+        self.cpu_usage_stat.configure(
+            text=f"{cpu:.0f}%", text_color=arc_color(cpu))
+
         # RAM
         mem = psutil.virtual_memory()
         draw_gauge(self.ram_canvas, mem.percent, arc_color(mem.percent))
@@ -1571,9 +1651,12 @@ class StatusMonitor:
             col = arc_color(temp_val)
             self.temp_big.configure(text=f"{temp_val:.0f}", text_color=col)
             self.temp_unit.configure(text_color=col)
+            self.cpu_temp_stat.configure(
+                text=f"{temp_val:.0f}\u00b0C", text_color=arc_color(temp_val))
         else:
             self.temp_big.configure(text="--", text_color=T_MID)
             self.temp_unit.configure(text_color=T_MID)
+            self.cpu_temp_stat.configure(text="--\u00b0C", text_color=T_MID)
         self.temp_sub.configure(text=temp_status)
 
         # GPU Temperature
@@ -1581,16 +1664,26 @@ class StatusMonitor:
         if gpu_val is not None:
             self.gpu_big.configure(
                 text=f"{gpu_val:.0f}", text_color=arc_color(gpu_val))
+            self.gpu_temp_stat2.configure(
+                text=f"{gpu_val:.0f}\u00b0C", text_color=arc_color(gpu_val))
         else:
             self.gpu_big.configure(text="--", text_color=T_MID)
+            self.gpu_temp_stat2.configure(text="--\u00b0C", text_color=T_MID)
         self.gpu_sub.configure(text=gpu_status)
+        self.gpu_device_stat.configure(text=gpu_status)
 
         # Wattage
         cpu_w, gpu_w = get_power()
         self.cpu_w_lbl.configure(
             text=f"  {cpu_w:.0f} W" if cpu_w is not None else "  -- W",
             text_color=C_AMBER if cpu_w is not None else T_MID)
+        self.cpu_power_stat.configure(
+            text=f"{cpu_w:.0f} W" if cpu_w is not None else "-- W",
+            text_color=C_AMBER if cpu_w is not None else T_MID)
         self.gpu_w_lbl.configure(
+            text=f"{gpu_w:.0f} W" if gpu_w is not None else "-- W",
+            text_color=C_PINK if gpu_w is not None else T_MID)
+        self.gpu_power_stat2.configure(
             text=f"{gpu_w:.0f} W" if gpu_w is not None else "-- W",
             text_color=C_PINK if gpu_w is not None else T_MID)
 
@@ -1599,15 +1692,19 @@ class StatusMonitor:
         if gpu_load is not None:
             self.gpu_util_lbl.configure(
                 text=f"{gpu_load:.0f}%", text_color=arc_color(gpu_load))
+            self.gpu_util_stat.configure(
+                text=f"{gpu_load:.0f}%", text_color=arc_color(gpu_load))
         else:
             self.gpu_util_lbl.configure(text="--%", text_color=T_MID)
+            self.gpu_util_stat.configure(text="--%", text_color=T_MID)
         if gpu_clock is not None:
             mhz = gpu_clock
-            self.gpu_clk_lbl.configure(
-                text=(f"{mhz/1000:.2f} GHz" if mhz >= 1000 else f"{mhz:.0f} MHz"),
-                text_color=C_PURPLE)
+            clk_text = f"{mhz/1000:.2f} GHz" if mhz >= 1000 else f"{mhz:.0f} MHz"
+            self.gpu_clk_lbl.configure(text=clk_text, text_color=C_PURPLE)
+            self.gpu_freq_stat.configure(text=clk_text, text_color=C_PURPLE)
         else:
             self.gpu_clk_lbl.configure(text="-- MHz", text_color=T_MID)
+            self.gpu_freq_stat.configure(text="-- MHz", text_color=T_MID)
 
         # Overlay + tray
         freq_ghz = (freq.current / 1000) if freq else None
